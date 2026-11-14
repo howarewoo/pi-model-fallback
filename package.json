@@ -1,45 +1,59 @@
 {
   "name": "@howarewoo/pi-model-fallback",
   "version": "0.1.0",
-  "type": "module",
   "description": "Independent, branch-persisted model fallback chains for Pi coding agent",
+  "keywords": [
+    "pi-package"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/howarewoo/pi-model-fallback.git"
+  },
+  "files": [
+    "src",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "type": "module",
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
-    "check": "tsc --noEmit",
-    "test": "tsx --test test/config.test.ts test/sdk-gate.test.ts",
-    "test:package": "tsx --test test/package.test.ts",
-    "test:coexistence": "tsx --test test/coexistence.test.ts"
+    "check": "npm run lint && npm run format:check && npm run typecheck && npm test",
+    "test": "tsx --test test/config.test.ts test/sdk-gate.test.ts test/release.test.ts test/changelog.test.ts",
+    "test:package": "node scripts/test-package.mjs",
+    "test:coexistence": "tsx --test test/coexistence.test.ts",
+    "typecheck": "tsc --noEmit",
+    "lint": "oxlint --deny-warnings .",
+    "lint:fix": "npm run lint -- --fix",
+    "format": "oxfmt --write .",
+    "format:check": "oxfmt --check .",
+    "release:check": "node scripts/release-notes.mjs",
+    "changelog:generate": "node scripts/generate-changelog.mjs",
+    "pr-title:check": "node scripts/check-pr-title.mjs"
   },
   "devDependencies": {
     "@earendil-works/pi-ai": "1.5.2",
     "@earendil-works/pi-coding-agent": "1.5.2",
     "@types/node": "26.6.6",
+    "oxfmt": "0.78.0",
+    "oxlint": "1.93.0",
     "tsx": "4.23.15",
     "typebox": "1.3.27",
     "typescript": "7.0.2"
-  },
-  "keywords": [
-    "pi-package"
-  ],
-  "engines": {
-    "node": ">=24"
-  },
-  "files": [
-    "src",
-    "README.md",
-    "CHANGELOG.md"
-  ],
-  "pi": {
-    "extensions": [
-      "./src/index.ts"
-    ]
   },
   "peerDependencies": {
     "@earendil-works/pi-ai": "*",
     "@earendil-works/pi-coding-agent": "*"
   },
-  "license": "UNLICENSED",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/howarewoo/pi-model-fallback.git"
+  "engines": {
+    "node": ">=24"
+  },
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ]
   }
 }

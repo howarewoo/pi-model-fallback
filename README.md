@@ -44,6 +44,7 @@ permissions: review the source before installing.
    **Listing a provider authorizes sending the conversation to it.** Cross-provider
    routing is never inferred from your credentials or catalogue. Choose only
    destinations you permit to receive that data.
+
 3. Merge the following prerequisite into your existing Pi `settings.json`; do not
    replace unrelated settings:
 
@@ -62,6 +63,7 @@ permissions: review the source before installing.
    dispatch and after its backoff. It stops with a diagnostic instead of changing
    your settings. `baseDelayMs` and `maxAgentDelayMs` remain Pi's retry settings;
    defaults are 2-second exponential backoff and a 60-second cap.
+
 4. Start Pi or use `/reload`, open `/model`, and select **`fallback/work`**. In
    print mode, use `pi --model fallback/work -p 'your request'`.
 5. Use `/fallback-status` to see the active target, consecutive eligible failure
@@ -77,13 +79,13 @@ chain and explicitly reset it after reviewing the new destinations.
 
 ## Configuration reference
 
-| Field | Contract |
-| --- | --- |
-| `version` | Required, exactly `1`. |
-| `chains` | Nonempty object of named, nonempty, ordered target arrays. |
-| Chain name | Starts with an ASCII letter/digit, followed by letters/digits, `_` or `-`. Appears as `fallback/<name>`. |
-| `provider`, `model` | Required exact catalogue IDs. Whitespace and glob-pattern characters are rejected. No automatic discovery of backups. |
-| `effort` | Required: `off`, `minimal`, `low`, `medium`, `high`, `xhigh` or `max`; must be supported by that physical model without clamping. |
+| Field               | Contract                                                                                                                          |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `version`           | Required, exactly `1`.                                                                                                            |
+| `chains`            | Nonempty object of named, nonempty, ordered target arrays.                                                                        |
+| Chain name          | Starts with an ASCII letter/digit, followed by letters/digits, `_` or `-`. Appears as `fallback/<name>`.                          |
+| `provider`, `model` | Required exact catalogue IDs. Whitespace and glob-pattern characters are rejected. No automatic discovery of backups.             |
+| `effort`            | Required: `off`, `minimal`, `low`, `medium`, `high`, `xhigh` or `max`; must be supported by that physical model without clamping. |
 
 Unknown fields (including secrets), duplicate exact provider/model/effort targets,
 virtual targets and unsupported efforts are errors. Missing catalogue entries and
@@ -140,22 +142,22 @@ entries. No custom visual dashboard is required.
 
 ## Troubleshooting
 
-| Symptom | Check and recovery |
-| --- | --- |
-| No `fallback/…` entries or commands | Create the agent-directory config, check JSON/version/field names, then `/reload`. No file means the extension registers nothing. Check Pi's extension-load errors. |
-| Retry prerequisite diagnostic | Set native retries to two, provider retries to zero and enable the retry toggle; the extension never makes these changes for you. |
-| Unauthorized scoped target | Correct the explicit physical model/effort scopes; adding credentials alone does not authorize a destination. |
-| Unsupported effort or virtual target | Use exact supported physical selections. These errors are never availability skips. |
-| Skipped targets / no available target | Check catalogue IDs, native provider authentication and image support; then reset when appropriate. A runtime 401/403 is terminal, not an availability skip. |
-| Chain changed or exhausted | Review `/fallback-status`; reset the selected idle branch explicitly. Reset does not test provider health. |
-| Unexpected provider text stops recovery | Keep the raw error for diagnosis. Do not recategorize an auth/permission/request failure as transient merely to get another model call. |
+| Symptom                                 | Check and recovery                                                                                                                                                  |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| No `fallback/…` entries or commands     | Create the agent-directory config, check JSON/version/field names, then `/reload`. No file means the extension registers nothing. Check Pi's extension-load errors. |
+| Retry prerequisite diagnostic           | Set native retries to two, provider retries to zero and enable the retry toggle; the extension never makes these changes for you.                                   |
+| Unauthorized scoped target              | Correct the explicit physical model/effort scopes; adding credentials alone does not authorize a destination.                                                       |
+| Unsupported effort or virtual target    | Use exact supported physical selections. These errors are never availability skips.                                                                                 |
+| Skipped targets / no available target   | Check catalogue IDs, native provider authentication and image support; then reset when appropriate. A runtime 401/403 is terminal, not an availability skip.        |
+| Chain changed or exhausted              | Review `/fallback-status`; reset the selected idle branch explicitly. Reset does not test provider health.                                                          |
+| Unexpected provider text stops recovery | Keep the raw error for diagnosis. Do not recategorize an auth/permission/request failure as transient merely to get another model call.                             |
 
 ## Contributor verification
 
 ```sh
 npm ci --ignore-scripts
 npm run check
-npm test
+npm run release:check
 npm run test:package
 ```
 
@@ -201,6 +203,11 @@ remains independently owned. No paid-provider uptime/account smoke test is claim
 
 The package repository is
 [`howarewoo/pi-model-fallback`](https://github.com/howarewoo/pi-model-fallback).
-Metadata is intentionally `UNLICENSED`: no license grant has been selected or
-included. Public repository visibility is not an open-source license. A license
-must be selected explicitly before representing this package as licensed for reuse.
+Licensed under the [MIT License](LICENSE), copyright 2026 Adam Woo.
+
+## Maintainer releases
+
+See the [release guide](https://github.com/howarewoo/pi-model-fallback/blob/main/docs/releases.md)
+for local gates, release notes, owner setup,
+and publication/recovery procedures. Automation files do not establish external
+protection or a published release.

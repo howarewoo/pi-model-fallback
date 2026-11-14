@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## [0.1.0]
 
 - Add standalone named `fallback/<chain>` virtual selections with explicit
   operator-owned provider/model/effort chains and native Pi authentication.
