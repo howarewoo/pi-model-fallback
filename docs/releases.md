@@ -20,10 +20,8 @@ Independently verify external controls before publishing:
   The YAML environment declaration alone does not create approval protection.
 - Preserve read-only default Actions permissions and disabled PR-review approval.
 
-During automation setup the owner configured and read back the release-tag ruleset
-and `npm` environment. Main protection awaits a real passing `check (24)` run.
-Recheck actual settings before a release rather than treating this document as proof
-that controls remain enabled.
+Recheck actual settings before every release rather than treating repository files
+or a prior setup report as proof that controls remain enabled.
 
 An npm package owner must confirm scope/package rights and determine any required
 first-publication bootstrap. **Account/bootstrap and trusted-publisher setup remain
