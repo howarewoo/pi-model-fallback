@@ -1,5 +1,5 @@
 import { setTimeout as delay } from 'node:timers/promises';
-import { getSupportedThinkingLevels, isContextOverflow, isRetryableAssistantError, retryDelayMs, type AssistantMessage, type Model, type Message } from '@earendil-works/pi-ai';
+import { getSupportedThinkingLevels, isContextOverflow, isRecoverableLength, isRetryableAssistantError, retryDelayMs, type AssistantMessage, type Model, type Message } from '@earendil-works/pi-ai';
 import { convertToLlm, type ExtensionAPI, type ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { fingerprint, identity, type Config } from './config.ts';
 
@@ -14,8 +14,11 @@ function eligible(message: AssistantMessage): boolean {
   if (message.stopReason !== 'error' || isContextOverflow(message)) return false;
   const error = message.errorMessage ?? '';
   // Terminal failures must win over ambiguous gateway text mentioning transient errors.
-  if (/\b(400|401|403|404|405|422)\b|unauthori[sz]ed|authentication|permission|access.denied|forbidden|invalid.request|refusal|content.policy|cancel|abort/i.test(error)) return false;
-  return isRetryableAssistantError(message) || /connection reset|socket hang up|premature close|interrupted stream|network error|insufficient_quota|quota (?:exceeded|exhausted)|exhausted quota|out of (?:budget|credits)|(?:insufficient|exhausted) credits|credits exhausted|credit balance|payment required|billing|usage.limit|usage limit|available balance|GoUsageLimitError|FreeUsageLimitError/i.test(error);
+  if (/\b(401|403|404|405|422)\b|unauthori[sz]ed|authentication|permission|access.denied|forbidden|refusal|content.policy|cancel|abort/i.test(error)) return false;
+  // Providers can report credit/usage exhaustion in a 400 invalid_request_error envelope.
+  if (/insufficient_quota|quota (?:exceeded|exhausted)|exhausted quota|out of (?:budget|credits)|(?:insufficient|exhausted) credits|credits exhausted|credit balance|payment required|billing|usage.limit|usage limit|available balance|GoUsageLimitError|FreeUsageLimitError/i.test(error)) return true;
+  if (/\b400\b|invalid.request/i.test(error)) return false;
+  return isRetryableAssistantError(message) || /connection reset|socket hang up|premature close|interrupted stream|network error/i.test(error);
 }
 function hasImages(messages: readonly Message[]): boolean {
   return messages.some(message => Array.isArray(message.content) && message.content.some(block => block.type === 'image'));
@@ -78,7 +81,11 @@ export function installFallback(pi: ExtensionAPI, config: Config) {
           }
           state = { ...state, index: state.index + 1, target: identity(targets[state.index + 1]), failures: 0 };
         }
-        if (request.reason === 'retry' && request.failed && !eligible(request.failed.message) && !isContextOverflow(request.failed.message)) throw new Error('Fallback stopped: failed response is not eligible for recovery');
+        if (request.reason === 'retry' && request.failed) {
+          const message = request.failed.message;
+          const model = ctx.modelRegistry.find(message.provider, message.model);
+          if (!eligible(message) && !isContextOverflow(message, model?.contextWindow) && !isRecoverableLength(message, model?.maxTokens ?? 0)) throw new Error('Fallback stopped: failed response is not eligible for recovery');
+        }
         if (request.reason !== 'direct' && state.pendingDelay && request.reason !== 'retry') {
           const retry = pi.getSettings().retry;
           await delay(retryDelayMs({ baseDelayMs: retry?.baseDelayMs ?? 2000, maxAgentDelayMs: retry?.maxAgentDelayMs ?? 60000 }, Math.max(1, state.failures)), undefined, { signal: request.signal });
@@ -114,7 +121,8 @@ export function installFallback(pi: ExtensionAPI, config: Config) {
     const target = config.chains[chain][state.index];
     if (event.message.provider !== target.provider || event.message.model !== target.model || state.lastEntryId === event.messageEntryId) return;
     const recover = eligible(event.message);
-    const successful = event.message.stopReason !== 'error' && event.message.stopReason !== 'aborted';
+    const model = ctx.modelRegistry.find(target.provider, target.model);
+    const successful = event.message.stopReason !== 'error' && event.message.stopReason !== 'aborted' && !isRecoverableLength(event.message, model?.maxTokens ?? 0);
     return { entries: [...event.entries,
       // Commit omission at the turn boundary too: queued user work can run before
       // final settlement. Never project a failed draft or its partial tool calls.

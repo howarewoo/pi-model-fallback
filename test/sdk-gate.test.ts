@@ -13,7 +13,7 @@ const config = (models = ['a', 'b']) => parseConfig({ version: 1, chains: { prob
 import { createAssistantMessageEventStream, type AssistantMessage } from '@earendil-works/pi-ai';
 import { createAgentSession, DefaultResourceLoader, ModelRuntime, SessionManager, SettingsManager, type ExtensionAPI, type ExtensionContext, type ProviderConfig } from '@earendil-works/pi-coding-agent';
 
-async function fixture(error: string | ((attempt: number) => string), observe: (pi: ExtensionAPI) => void, script?: (attempt: number) => 'tool' | 'partial' | 'success' | 'error') {
+async function fixture(error: string | ((attempt: number) => string), observe: (pi: ExtensionAPI) => void, script?: (attempt: number) => 'tool' | 'partial' | 'success' | 'error' | 'length') {
   const dir = await mkdtemp(join(tmpdir(), 'fallback-sdk-'));
   const settings = SettingsManager.inMemory({ compaction: { enabled: false }, retry: { enabled: true, maxRetries: 2, baseDelayMs: 1, provider: { maxRetries: 0 } } });
   const runtime = await ModelRuntime.create({ authPath: join(dir, 'auth.json'), modelsPath: null, refreshOnCreate: false });
@@ -40,6 +40,11 @@ async function fixture(error: string | ((attempt: number) => string), observe: (
         message.content.push({ type: 'toolCall', id: `call-${calls.length}`, name: 'counter', arguments: {} });
         if (step === 'tool') message.stopReason = 'toolUse';
       }
+      if (step === 'length') {
+        message.stopReason = 'length';
+        message.usage.output = 1;
+        message.usage.totalTokens = 1;
+      }
       stream.push({ type: 'start', partial: message });
       stream.push({ type: 'text_start', contentIndex: 0, partial: message });
       stream.push({ type: 'text_delta', contentIndex: 0, delta: failed ? 'abandoned draft' : 'recovered', partial: message });
@@ -50,7 +55,7 @@ async function fixture(error: string | ((attempt: number) => string), observe: (
         if (step === 'tool') stream.push({ type: 'toolcall_end', contentIndex: 1, toolCall: { type: 'toolCall', id: `call-${calls.length}`, name: 'counter', arguments: {} }, partial: message });
       }
       if (failed) stream.push({ type: 'error', reason: 'error', error: message });
-      else stream.push({ type: 'done', reason: message.stopReason === 'toolUse' ? 'toolUse' : 'stop', message });
+      else stream.push({ type: 'done', reason: message.stopReason === 'toolUse' ? 'toolUse' : message.stopReason === 'length' ? 'length' : 'stop', message });
       stream.end();
       return stream;
     },
@@ -192,7 +197,11 @@ test('branch/reset routing survives reload; direct calls are read-only', async (
   } finally { await f.close(); }
 });
 
-for (const error of ['insufficient_quota', '503 service unavailable']) {
+for (const error of [
+  'insufficient_quota', '503 service unavailable',
+  '400 {"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API."}}',
+  '400 {"type":"error","error":{"type":"invalid_request_error","message":"You have reached your usage limit."}}',
+]) {
   test(`standalone controller implements bounded sticky recovery: ${error}`, async () => {
     const f = await fixture(error, pi => installFallback(pi, config(['a', 'missing', 'b'])));
     try {
@@ -210,7 +219,15 @@ for (const error of ['insufficient_quota', '503 service unavailable']) {
   });
 }
 
-for (const error of ['401 unauthorized', '403 permission denied', 'invalid request', 'content policy refusal']) {
+for (const error of [
+  '401 unauthorized', '403 permission denied', 'invalid request', 'content policy refusal',
+  '400 {"error":{"type":"invalid_request_error","message":"messages: text content blocks must be non-empty"}}',
+  '400 invalid_request_error: server overloaded',
+  '401 authentication failed: credit balance unavailable',
+  '403 permission denied: usage limit exceeded',
+  'request cancelled: insufficient_quota',
+  'content policy refusal: credit balance unavailable',
+]) {
   test(`terminal failure never recovers: ${error}`, async () => {
     const f = await fixture(error, pi => installFallback(pi, config()));
     try {
@@ -235,6 +252,30 @@ test('chain exhaustion is latched; reset sends no call', async () => {
     assert.equal(f.calls.length, 6);
   } finally { await f.close(); }
 });
+
+for (const priorFailure of [false, true]) {
+  test(`native truncated-response compaction retries the same target without spending its budget (prior failure: ${priorFailure})`, async () => {
+    const lengthAttempt = priorFailure ? 3 : 2;
+    const f = await fixture('503 service unavailable', pi => {
+      installFallback(pi, config());
+      pi.on('session_before_compact', event => ({ compaction: { summary: 'Deterministic summary', firstKeptEntryId: event.preparation.firstKeptEntryId, tokensBefore: event.preparation.tokensBefore } }));
+    }, attempt => attempt === 1 ? 'success' : attempt === lengthAttempt ? 'length' : attempt <= 5 ? 'error' : 'success');
+    try {
+      f.settings.applyOverrides({ compaction: { enabled: true, keepRecentTokens: 1, reserveTokens: 1024 } });
+      await f.session.setModel(f.runtime.getModel('fallback', 'probe')!);
+      await f.session.prompt('warmup');
+      await f.session.prompt('recover a truncated response');
+      assert.deepEqual(f.calls, ['a', 'a', 'a', 'a', 'a', 'b']);
+      const branch = f.session.sessionManager.getBranch();
+      assert.equal(branch.filter(e => e.type === 'compaction').length, 1);
+      const lengthIndex = branch.findIndex(e => e.type === 'message' && e.message.role === 'assistant' && e.message.stopReason === 'length');
+      const state = branch.slice(lengthIndex + 1).find(e => e.type === 'custom' && e.customType === 'model-fallback.state.v1');
+      assert.ok(state?.type === 'custom');
+      assert.equal((state.data as { failures: number }).failures, priorFailure ? 1 : 0);
+      assert.ok(!JSON.stringify(f.session.state.messages).includes('not eligible for recovery'));
+    } finally { await f.close(); }
+  });
+}
 
 test('success clears consecutive failures without selecting another model', async () => {
   const f = await fixture('insufficient_quota', pi => installFallback(pi, config()), attempt => attempt === 3 || attempt === 6 ? 'success' : 'error');
